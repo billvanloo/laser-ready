@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>laser ready · pdf preprocessor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0a;
+  --bg-2: #131313;
+  --bg-3: #181818;
+  --line: #1f1f1f;
+  --line-2: #2a2a2a;
+  --text: #e8e8e8;
+  --muted: #6a6a6a;
+  --muted-2: #999;
+  --cut: #ff0000;
+  --warn: #ffb000;
+  --ok: #00d97e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 48px 32px 32px;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 32px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+h1 {
+  font-family: 'Major Mono Display', monospace;
+  font-weight: 400;
+  font-size: 30px;
+  letter-spacing: 0.04em;
+  margin: 0;
+  line-height: 1;
+}
+h1 .accent { color: var(--cut); margin: 0 4px; }
+.meta {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.spec {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--line);
+  margin-bottom: 24px;
+  background: var(--bg-2);
+}
+.spec > div {
+  padding: 14px 18px;
+  border-right: 1px solid var(--line);
+}
+.spec > div:last-child { border-right: none; }
+.spec .k {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.spec .v {
+  font-size: 16px;
+  font-weight: 500;
+}
+.spec .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: var(--cut);
+  margin-right: 8px;
+  vertical-align: -1px;
+  box-shadow: 0 0 8px rgba(255,0,0,0.6);
+}
+
+.drop {
+  display: block;
+  border: 1px dashed var(--line-2);
+  background: var(--bg-2);
+  padding: 56px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  position: relative;
+  user-select: none;
+}
+.drop:hover, .drop.over {
+  border-color: var(--cut);
+  background: #161010;
+}
+.drop.over { transform: scale(0.998); }
+.drop .icon {
+  font-size: 32px;
+  margin-bottom: 14px;
+  color: var(--cut);
+  line-height: 1;
+  letter-spacing: 0;
+  font-family: 'Major Mono Display', monospace;
+}
+.drop .title {
+  font-size: 14px;
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.drop .sub {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+.drop.busy { pointer-events: none; opacity: 0.6; }
+.drop.busy .icon::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--cut);
+  animation: blink 0.8s steps(2) infinite;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+input[type=file] { display: none; }
+
+.log {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 14px 18px;
+  min-height: 140px;
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 320px;
+  overflow-y: auto;
+  font-variant-ligatures: none;
+}
+.log .line {
+  display: flex;
+  gap: 14px;
+  padding: 1px 0;
+}
+.log .t { color: var(--muted); flex-shrink: 0; }
+.log .msg { word-break: break-all; }
+.log .ok .msg { color: var(--ok); }
+.log .warn .msg { color: var(--warn); }
+.log .err .msg { color: var(--cut); }
+.log .info .msg { color: var(--text); }
+.log .dim .msg { color: var(--muted-2); }
+
+.log::-webkit-scrollbar { width: 6px; }
+.log::-webkit-scrollbar-track { background: var(--bg-2); }
+.log::-webkit-scrollbar-thumb { background: var(--line-2); }
+
+footer {
+  margin-top: 32px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+footer .corner-mark { color: var(--cut); }
+
+@media (max-width: 600px) {
+  .wrap { padding: 32px 20px; }
+  .spec { grid-template-columns: 1fr; }
+  .spec > div { border-right: none; border-bottom: 1px solid var(--line); }
+  .spec > div:last-child { border-bottom: none; }
+  h1 { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>laser<span class="accent">|</span>ready</h1>
+    <div class="meta">v1.0 · pdf preprocessor</div>
+  </header>
+
+  <div class="spec">
+    <div>
+      <div class="k">stroke color</div>
+      <div class="v"><span class="swatch"></span>255 · 0 · 0</div>
+    </div>
+    <div>
+      <div class="k">line weight</div>
+      <div class="v">0.001 in</div>
+    </div>
+    <div>
+      <div class="k">filename prefix</div>
+      <div class="v">laser ready</div>
+    </div>
+  </div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="application/pdf,.pdf">
+    <div class="icon">[ + ]</div>
+    <div class="title">drop pdf · or click to browse</div>
+    <div class="sub">all strokes → red 255·0·0 · all weights → 0.001″ hairline</div>
+  </label>
+
+  <div class="log" id="log">
+    <div class="line info"><span class="t">[ready]</span><span class="msg">waiting for input file…</span></div>
+  </div>
+
+  <footer>
+    <span><span class="corner-mark">▪</span> client-side · no upload</span>
+    <span>built on pdf-lib</span>
+  </footer>
+</div>
+
+<script>
+// ----- pdf-lib loader with CDN fallbacks ------------------------------------
+const PDFLIB_CDNS = [
+  'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+  'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'
+];
+
+let PDFLibAPI = null;          // resolved members of window.PDFLib
+let pdfLibLoadPromise = null;  // single shared load promise
+let PDFDocument, PDFName, PDFArray, PDFRawStream, decodePDFRawStream;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('failed: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+function ensurePdfLib() {
+  if (PDFLibAPI) return Promise.resolve(PDFLibAPI);
+  if (pdfLibLoadPromise) return pdfLibLoadPromise;
+
+  pdfLibLoadPromise = (async () => {
+    let lastErr = null;
+    for (const url of PDFLIB_CDNS) {
+      const short = url.replace(/^https?:\/\//, '').split('/')[0];
+      try {
+        log('loading pdf-lib from ' + short + '…', 'dim');
+        await loadScript(url);
+        if (window.PDFLib) {
+          PDFLibAPI = window.PDFLib;
+          ({ PDFDocument, PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = PDFLibAPI);
+          log('pdf-lib loaded · ' + short, 'ok');
+          return PDFLibAPI;
+        }
+        lastErr = new Error('script loaded but PDFLib global missing');
+      } catch (e) {
+        lastErr = e;
+        log('  cdn failed: ' + short, 'warn');
+      }
+    }
+    throw lastErr || new Error('all cdns failed');
+  })();
+
+  return pdfLibLoadPromise;
+}
+// ---------------------------------------------------------------------------
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const logEl = document.getElementById('log');
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function ts() {
+  const d = new Date();
+  return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+
+function log(msg, cls = 'info') {
+  const line = document.createElement('div');
+  line.className = 'line ' + cls;
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = '[' + ts() + ']';
+  const m = document.createElement('span');
+  m.className = 'msg';
+  m.textContent = msg;
+  line.appendChild(t);
+  line.appendChild(m);
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault();
+  drop.classList.add('over');
+}));
+['dragleave','dragend'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) handleFile(f);
+  fileInput.value = '';
+});
+
+// Start loading pdf-lib immediately on page load — don't wait for a file
+ensurePdfLib().catch(err => {
+  log('pdf-lib failed to load: ' + (err.message || err), 'err');
+  log('check network / ad blocker; try a different browser', 'warn');
+});
+
+async function handleFile(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    log('rejected: ' + file.name + ' is not a pdf', 'err');
+    return;
+  }
+
+  drop.classList.add('busy');
+  log('---', 'dim');
+  log('input: ' + file.name + ' · ' + (file.size/1024).toFixed(1) + ' kb', 'ok');
+
+  try {
+    await ensurePdfLib();
+    const bytes = await file.arrayBuffer();
+    const out = await convertToLaserReady(bytes);
+    const outName = 'laser ready ' + file.name;
+    await saveFile(out, outName);
+    log('output: ' + outName + ' · ' + (out.length/1024).toFixed(1) + ' kb', 'ok');
+    log('done.', 'ok');
+  } catch (err) {
+    console.error(err);
+    log('error: ' + (err.message || err), 'err');
+  } finally {
+    drop.classList.remove('busy');
+  }
+}
+
+async function convertToLaserReady(bytes) {
+  log('parsing pdf…');
+  const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const pages = pdfDoc.getPages();
+  log('pages: ' + pages.length);
+
+  let totalColors = 0, totalWidths = 0;
+  for (let i = 0; i < pages.length; i++) {
+    const result = await transformPage(pages[i], pdfDoc);
+    totalColors += result.colors;
+    totalWidths += result.widths;
+    log('  page ' + (i+1) + ': rewrote ' + result.colors + ' color op(s), ' + result.widths + ' width op(s)', 'dim');
+  }
+
+  log('total rewrites: ' + totalColors + ' color · ' + totalWidths + ' width');
+  log('serializing…');
+  return await pdfDoc.save({ useObjectStreams: false });
+}
+
+async function transformPage(page, pdfDoc) {
+  const ctx = pdfDoc.context;
+  const contents = page.node.Contents();
+  if (!contents) {
+    log('  page has no content stream', 'warn');
+    return { colors: 0, widths: 0 };
+  }
+
+  // Collect all stream objects backing this page's Contents
+  let streamObjs = [];
+  if (contents instanceof PDFArray) {
+    for (let k = 0; k < contents.size(); k++) {
+      const obj = contents.lookup(k);
+      if (obj) streamObjs.push(obj);
+    }
+  } else {
+    streamObjs.push(contents);
+  }
+
+  // Decode & concatenate (with whitespace separators between streams)
+  let pieces = [];
+  for (const stream of streamObjs) {
+    let decoded;
+    try {
+      if (stream instanceof PDFRawStream) {
+        decoded = decodePDFRawStream(stream).decode();
+      } else if (typeof stream.getContents === 'function') {
+        decoded = stream.getContents();
+      } else {
+        continue;
+      }
+    } catch (e) {
+      log('  failed to decode a content stream: ' + e.message, 'warn');
+      continue;
+    }
+    pieces.push(decoded);
+  }
+
+  const totalLen = pieces.reduce((s, p) => s + p.length + 1, 0);
+  const combined = new Uint8Array(totalLen);
+  let off = 0;
+  for (const p of pieces) {
+    combined.set(p, off);
+    off += p.length;
+    combined[off++] = 0x0a; // newline separator
+  }
+
+  // Bytes → latin1 string (1:1 byte preservation)
+  let text = '';
+  for (let k = 0; k < combined.length; k++) text += String.fromCharCode(combined[k]);
+
+  const result = transformContentStream(text);
+
+  // String → bytes
+  const outBytes = new Uint8Array(result.text.length);
+  for (let k = 0; k < result.text.length; k++) outBytes[k] = result.text.charCodeAt(k) & 0xff;
+
+  // Build a new raw stream and replace the page's Contents
+  const dict = ctx.obj({ Length: outBytes.length });
+  const newStream = PDFRawStream.of(dict, outBytes);
+  const ref = ctx.register(newStream);
+  page.node.set(PDFName.of('Contents'), ref);
+
+  return { colors: result.colors, widths: result.widths };
+}
+
+// Rewrite a content-stream text:
+//   - any stroke-color setter → "1 0 0 RG"
+//   - any line-width setter   → "0.072 w"   (0.001 in · 72 pt/in)
+//   - any stroking color space setter → "/DeviceRGB CS"
+//   - prepend an initial state in case the original sets neither
+// ---------------------------------------------------------------------------
+// Content-stream walker.
+//
+// PDF stores line width in *user-space* units, and the CTM (set by `cm`)
+// can rescale user space at any point. So a single fixed `w` value won't
+// give 0.001" in every context — we have to track the current CTM scale
+// and emit a `w` that, multiplied by that scale, equals 0.072 pt (= 0.001 in).
+// ---------------------------------------------------------------------------
+
+const TARGET_WIDTH_POINTS = 0.072; // 0.001 in × 72 pt/in
+
+// Whitespace + delimiter character codes (PDF spec 7.2.2 / 7.2.3)
+const WS = c => c === 0x20 || c === 0x09 || c === 0x0A || c === 0x0D || c === 0x0C || c === 0x00;
+const DELIM = c => c === 0x28 || c === 0x29 || c === 0x3C || c === 0x3E
+                || c === 0x5B || c === 0x5D || c === 0x7B || c === 0x7D
+                || c === 0x2F || c === 0x25;
+
+function tokenizeContentStream(text) {
+  const tokens = [];
+  const n = text.length;
+  let i = 0;
+
+  while (i < n) {
+    const c = text.charCodeAt(i);
+
+    if (WS(c)) { i++; continue; }
+
+    // comment % … EOL
+    if (c === 0x25) {
+      while (i < n) {
+        const cc = text.charCodeAt(i);
+        if (cc === 0x0A || cc === 0x0D) break;
+        i++;
+      }
+      continue;
+    }
+
+    // number: optional sign, digits / dot
+    if (c === 0x2B || c === 0x2D || c === 0x2E || (c >= 0x30 && c <= 0x39)) {
+      const start = i;
+      let hasDigit = false, sawDot = false;
+      if (c === 0x2B || c === 0x2D) i++;
+      while (i < n) {
+        const cc = text.charCodeAt(i);
+        if (cc >= 0x30 && cc <= 0x39) { hasDigit = true; i++; }
+        else if (cc === 0x2E && !sawDot) { sawDot = true; i++; }
+        else break;
+      }
+      if (hasDigit) {
+        tokens.push({ type: 'num', text: text.substring(start, i) });
+        continue;
+      }
+      i = start; // fall through, treat as operator
+    }
+
+    // literal string ( … )
+    if (c === 0x28) {
+      const start = i;
+      let depth = 1; i++;
+      while (i < n && depth > 0) {
+        const cc = text.charCodeAt(i);
+        if (cc === 0x5C) { i += 2; continue; }
+        if (cc === 0x28) depth++;
+        else if (cc === 0x29) depth--;
+        i++;
+      }
+      tokens.push({ type: 'str', text: text.substring(start, i) });
+      continue;
+    }
+
+    // < … >   or  << … >>
+    if (c === 0x3C) {
+      if (i + 1 < n && text.charCodeAt(i + 1) === 0x3C) {
+        const start = i;
+        let depth = 0;
+        while (i < n) {
+          if (text.charCodeAt(i) === 0x3C && i + 1 < n && text.charCodeAt(i + 1) === 0x3C) {
+            depth++; i += 2;
+          } else if (text.charCodeAt(i) === 0x3E && i + 1 < n && text.charCodeAt(i + 1) === 0x3E) {
+            depth--; i += 2;
+            if (depth === 0) break;
+          } else i++;
+        }
+        tokens.push({ type: 'dict', text: text.substring(start, i) });
+        continue;
+      } else {
+        const start = i; i++;
+        while (i < n && text.charCodeAt(i) !== 0x3E) i++;
+        if (i < n) i++;
+        tokens.push({ type: 'hex', text: text.substring(start, i) });
+        continue;
+      }
+    }
+
+    // array [ … ]
+    if (c === 0x5B) {
+      const start = i;
+      let depth = 1; i++;
+      while (i < n && depth > 0) {
+        const cc = text.charCodeAt(i);
+        if (cc === 0x5B) depth++;
+        else if (cc === 0x5D) depth--;
+        i++;
+      }
+      tokens.push({ type: 'arr', text: text.substring(start, i) });
+      continue;
+    }
+
+    // name /foo
+    if (c === 0x2F) {
+      const start = i; i++;
+      while (i < n) {
+        const cc = text.charCodeAt(i);
+        if (WS(cc) || DELIM(cc)) break;
+        i++;
+      }
+      tokens.push({ type: 'name', text: text.substring(start, i) });
+      continue;
+    }
+
+    // operator — keep reading until whitespace/delimiter
+    const start = i;
+    while (i < n) {
+      const cc = text.charCodeAt(i);
+      if (WS(cc) || DELIM(cc)) break;
+      i++;
+    }
+    if (i > start) {
+      const opText = text.substring(start, i);
+      tokens.push({ type: 'op', text: opText });
+
+      // Inline image: BI … ID <raw bytes> EI — the bytes between ID and EI
+      // aren't tokens, so swallow them verbatim into a single passthrough op.
+      if (opText === 'BI') {
+        // find ID
+        let j = i;
+        while (j < n - 1) {
+          if (text.charCodeAt(j) === 0x49 /*I*/ && text.charCodeAt(j + 1) === 0x44 /*D*/) {
+            const before = j > 0 ? text.charCodeAt(j - 1) : 0x20;
+            const after  = j + 2 < n ? text.charCodeAt(j + 2) : 0x20;
+            if ((WS(before) || DELIM(before)) && (WS(after) || DELIM(after))) break;
+          }
+          j++;
+        }
+        if (j < n - 1) {
+          // find EI
+          let k = j + 2;
+          while (k < n - 1) {
+            if (text.charCodeAt(k) === 0x45 /*E*/ && text.charCodeAt(k + 1) === 0x49 /*I*/) {
+              const before = k > 0 ? text.charCodeAt(k - 1) : 0x20;
+              const after  = k + 2 < n ? text.charCodeAt(k + 2) : 0x20;
+              if ((WS(before) || DELIM(before)) && (WS(after) || DELIM(after))) break;
+            }
+            k++;
+          }
+          if (k < n - 1) {
+            tokens.push({ type: 'raw', text: text.substring(i, k + 2) });
+            i = k + 2;
+            continue;
+          }
+        }
+      }
+    } else {
+      i++; // safety
+    }
+  }
+  return tokens;
+}
+
+function groupOperations(tokens) {
+  const ops = [];
+  let operands = [];
+  for (const t of tokens) {
+    if (t.type === 'op' || t.type === 'raw') {
+      ops.push({ operands, op: t.type === 'raw' ? null : t.text, raw: t.type === 'raw' ? t.text : null });
+      operands = [];
+    } else {
+      operands.push(t);
+    }
+  }
+  if (operands.length > 0) ops.push({ operands, op: null, raw: null });
+  return ops;
+}
+
+function fmtNum(v) {
+  // Avoid scientific notation; trim trailing zeros after the decimal point.
+  let s = Math.abs(v) < 1e-7 ? '0' : v.toFixed(10);
+  if (s.indexOf('.') !== -1) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s;
+}
+
+function transformContentStream(text) {
+  const STROKE_COLOR_OPS = new Set(['RG', 'G', 'K', 'SCN', 'SC']);
+
+  const tokens = tokenizeContentStream(text);
+  const ops = groupOperations(tokens);
+
+  const scaleStack = [1.0];           // accumulated CTM scale per q/Q frame
+  const out = [];
+  let colors = 0, widths = 0;
+
+  const curScale = () => scaleStack[scaleStack.length - 1];
+  const widthFor = () => fmtNum(TARGET_WIDTH_POINTS / curScale());
+  const emit = s => out.push(s);
+  const emitOperands = arr => { if (arr.length) emit(arr.map(t => t.text).join(' ')); };
+  const passthrough = ({ operands, op, raw }) => {
+    if (raw !== null) { emit(raw); return; }
+    emitOperands(operands);
+    if (op !== null) emit(op);
+  };
+
+  // Initial state: red stroke, target hairline width (scale = 1.0 here).
+  emit('1 0 0 RG');
+  emit(widthFor() + ' w');
+
+  for (const op of ops) {
+    const { operands, op: name } = op;
+
+    if (name === 'q') {
+      scaleStack.push(curScale());
+      emit('q');
+      // After q the saved state matches what we just set; nothing to re-emit.
+    }
+    else if (name === 'Q') {
+      if (scaleStack.length > 1) scaleStack.pop();
+      emit('Q');
+      // Q restores the entire graphics state from the matching q — including
+      // any line width / color the *original* stream had set before that q.
+      // Re-stamp our values so the restore can't sneak old values back in.
+      emit('1 0 0 RG');
+      emit(widthFor() + ' w');
+    }
+    else if (name === 'cm') {
+      if (operands.length >= 6) {
+        const a = parseFloat(operands[0].text);
+        const b = parseFloat(operands[1].text);
+        const c = parseFloat(operands[2].text);
+        const d = parseFloat(operands[3].text);
+        const det = Math.abs(a * d - b * c);
+        const s = Math.sqrt(det);
+        if (s > 1e-12 && isFinite(s)) {
+          scaleStack[scaleStack.length - 1] *= s;
+        }
+      }
+      passthrough(op);
+      // Scale changed → re-emit width so effective width stays at 0.001"
+      emit(widthFor() + ' w');
+    }
+    else if (name === 'gs') {
+      // /Name gs may load LW (line width) and stroke color from an ExtGState
+      // dict in the page resources. Re-stamp ours immediately after.
+      passthrough(op);
+      emit('1 0 0 RG');
+      emit(widthFor() + ' w');
+    }
+    else if (STROKE_COLOR_OPS.has(name)) {
+      colors++;
+      emit('1 0 0 RG');
+    }
+    else if (name === 'CS') {
+      emit('/DeviceRGB CS');
+    }
+    else if (name === 'w') {
+      widths++;
+      emit(widthFor() + ' w');
+    }
+    else {
+      passthrough(op);
+    }
+  }
+
+  return { text: out.join('\n'), colors, widths };
+}
+
+async function saveFile(bytes, suggestedName) {
+  // Preferred: File System Access API (Chrome/Edge) → user sees real save dialog
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        log('save cancelled', 'warn');
+        throw new Error('save cancelled');
+      }
+      // any other error → fall through to download fallback
+    }
+  }
+  // Fallback: trigger a download
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+</script>
+</body>
+</html>
