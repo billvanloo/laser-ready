@@ -240,6 +240,14 @@ footer {
 footer .corner-mark { color: var(--cut); }
 .foot-brand { display: flex; flex-direction: column; gap: 6px; }
 .foot-by { color: var(--text); letter-spacing: 0.04em; }
+.foot-by a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.foot-by a:hover { color: var(--cut); text-decoration-color: var(--cut); }
 .foot-ai { color: var(--muted); line-height: 1.6; max-width: 64ch; }
 .foot-links {
   display: flex;
@@ -351,7 +359,7 @@ footer .corner-mark { color: var(--cut); }
                (and the "[laser-ready]" subject tag) when reusing for another tool.
          ================================================================ -->
     <div class="foot-brand">
-      <span class="foot-by">Designed by <strong>Bill Van Loo</strong></span>
+      <span class="foot-by">Designed by <a href="https://billvanloo.com" target="_blank" rel="noopener"><strong>Bill Van Loo</strong></a></span>
       <span class="foot-ai">Developed using Claude — please don't use this tool if you're uncomfortable using tools built with AI assistance.</span>
     </div>
     <nav class="foot-links" aria-label="Project links">
