@@ -2,7 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="laser ready — a private, client-side tool that preprocesses Onshape/vector PDFs for laser cutting: all strokes to red 255·0·0, all line weights to a 0.001″ hairline. Nothing is uploaded.">
 <title>laser ready · pdf preprocessor</title>
+<script>
+  // Set theme before first paint to avoid a flash. A stored choice wins; otherwise follow the OS.
+  (function () {
+    try {
+      var t = localStorage.getItem('lr-theme');
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
@@ -14,11 +30,28 @@
   --line: #1f1f1f;
   --line-2: #2a2a2a;
   --text: #e8e8e8;
-  --muted: #6a6a6a;
-  --muted-2: #999;
+  --muted: #8f8f8f;
+  --muted-2: #aaaaaa;
   --cut: #ff0000;
   --warn: #ffb000;
   --ok: #00d97e;
+  --grid: rgba(255,255,255,0.02);
+  --drop-hover: #161010;
+}
+:root[data-theme="light"] {
+  --bg: #f6f6f4;
+  --bg-2: #ffffff;
+  --bg-3: #eeeeea;
+  --line: #dcdcd6;
+  --line-2: #c4c4bc;
+  --text: #171717;
+  --muted: #5c5c5c;
+  --muted-2: #333333;
+  --cut: #d10000;
+  --warn: #8a5a00;
+  --ok: #0a7d4a;
+  --grid: rgba(0,0,0,0.045);
+  --drop-hover: #fbecec;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -28,8 +61,8 @@ body {
   color: var(--text);
   min-height: 100vh;
   background-image:
-    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 24px 24px;
   background-position: -1px -1px;
   font-size: 14px;
@@ -60,7 +93,7 @@ h1 {
 }
 h1 .accent { color: var(--cut); margin: 0 4px; }
 .meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -79,7 +112,7 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
 }
 .spec > div:last-child { border-right: none; }
 .spec .k {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -112,7 +145,12 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
 }
 .drop:hover, .drop.over {
   border-color: var(--cut);
-  background: #161010;
+  background: var(--drop-hover);
+}
+.drop:focus-within {
+  border-color: var(--cut);
+  outline: 2px solid var(--cut);
+  outline-offset: 3px;
 }
 .drop.over { transform: scale(0.998); }
 .drop .icon {
@@ -129,7 +167,7 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
   letter-spacing: 0.04em;
 }
 .drop .sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   letter-spacing: 0.06em;
 }
@@ -146,7 +184,19 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-input[type=file] { display: none; }
+/* Visually hidden but still focusable, so keyboard users can reach the picker
+   (display:none would drop it from the tab order). The wrapping label triggers it. */
+input[type=file] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .log {
   margin-top: 24px;
@@ -154,7 +204,7 @@ input[type=file] { display: none; }
   background: var(--bg-2);
   padding: 14px 18px;
   min-height: 140px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   max-height: 320px;
   overflow-y: auto;
@@ -179,18 +229,75 @@ input[type=file] { display: none; }
 
 footer {
   margin-top: 32px;
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+footer .corner-mark { color: var(--cut); }
+.foot-brand { display: flex; flex-direction: column; gap: 6px; }
+.foot-by { color: var(--text); letter-spacing: 0.04em; }
+.foot-by a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.foot-by a:hover { color: var(--cut); text-decoration-color: var(--cut); }
+.foot-ai { color: var(--muted); line-height: 1.6; max-width: 64ch; }
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.foot-links a {
+  color: var(--muted-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.foot-links a:hover { color: var(--cut); text-decoration-color: var(--cut); }
+.foot-status {
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted);
 }
-footer .corner-mark { color: var(--cut); }
+
+.head-right { display: flex; align-items: center; gap: 16px; }
+.theme-toggle {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.theme-toggle:hover { border-color: var(--cut); color: var(--text); }
+
+:focus-visible { outline: 2px solid var(--cut); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 
 @media (max-width: 600px) {
   .wrap { padding: 32px 20px; }
@@ -205,7 +312,10 @@ footer .corner-mark { color: var(--cut); }
 <div class="wrap">
   <header>
     <h1>laser<span class="accent">|</span>ready</h1>
-    <div class="meta">v1.0 · pdf preprocessor</div>
+    <div class="head-right">
+      <span class="meta">v1.0 · pdf preprocessor</span>
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light or dark theme" aria-pressed="false">theme</button>
+    </div>
   </header>
 
   <div class="spec">
@@ -230,13 +340,39 @@ footer .corner-mark { color: var(--cut); }
     <div class="sub">all strokes → red 255·0·0 · all weights → 0.001″ hairline</div>
   </label>
 
-  <div class="log" id="log">
+  <div class="log" id="log" role="log" aria-live="polite" aria-label="Processing log">
     <div class="line info"><span class="t">[ready]</span><span class="msg">waiting for input file…</span></div>
   </div>
 
   <footer>
-    <span><span class="corner-mark">▪</span> client-side · no upload</span>
-    <span>built on pdf-lib</span>
+    <!-- ================================================================
+         ATTRIBUTION / BRANDING BLOCK  ·  reusable across tools
+         GLOBAL (keep identical everywhere):
+           · "Designed by Bill Van Loo"
+           · AI disclaimer
+           · Ko-fi support link
+           · MIT License link
+         PER-PROJECT (edit for each tool):
+           · FEEDBACK_EMAIL below  ·  the "[laser-ready]" subject tag
+           · the repo / source URL
+         NOTE: FEEDBACK_EMAIL is set in the two mailto: links below — update it
+               (and the "[laser-ready]" subject tag) when reusing for another tool.
+         ================================================================ -->
+    <div class="foot-brand">
+      <span class="foot-by">Designed by <a href="https://billvanloo.com" target="_blank" rel="noopener"><strong>Bill Van Loo</strong></a></span>
+      <span class="foot-ai">Developed using Claude — please don't use this tool if you're uncomfortable using tools built with AI assistance.</span>
+    </div>
+    <nav class="foot-links" aria-label="Project links">
+      <a href="mailto:billvanloo.tech+feedback@gmail.com?subject=%5Blaser-ready%5D%20Bug%20report">Report a bug</a>
+      <a href="mailto:billvanloo.tech+feedback@gmail.com?subject=%5Blaser-ready%5D%20Feature%20request">Request a feature</a>
+      <a href="https://ko-fi.com/billvanloo" target="_blank" rel="noopener">Support on Ko-fi</a>
+      <a href="https://github.com/billvanloo/laser-ready/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      <a href="https://github.com/billvanloo/laser-ready" target="_blank" rel="noopener">View source</a>
+    </nav>
+    <div class="foot-status">
+      <span><span class="corner-mark">▪</span> client-side · no upload</span>
+      <span>built on pdf-lib</span>
+    </div>
   </footer>
 </div>
 
@@ -296,6 +432,26 @@ function ensurePdfLib() {
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
 const logEl = document.getElementById('log');
+
+// ----- theme toggle (light / dark) -----------------------------------------
+// The pre-paint script in <head> already set data-theme from localStorage/OS.
+const themeToggle = document.getElementById('themeToggle');
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+function syncThemeToggle() {
+  const t = currentTheme();
+  // Label shows the mode you'd switch TO.
+  themeToggle.textContent = t === 'dark' ? '☀ light' : '☾ dark';
+  themeToggle.setAttribute('aria-pressed', t === 'light' ? 'true' : 'false');
+}
+themeToggle.addEventListener('click', () => {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('lr-theme', next); } catch (e) { /* ignore */ }
+  syncThemeToggle();
+});
+syncThemeToggle();
 
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
 function ts() {
