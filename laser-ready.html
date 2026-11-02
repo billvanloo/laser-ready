@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="laser ready — a private, client-side tool that preprocesses Onshape/vector PDFs for laser cutting: all strokes to red 255·0·0, all line weights to a 0.001″ hairline. Nothing is uploaded.">
+<meta name="description" content="laser ready — a private, client-side tool that preprocesses Onshape/vector PDFs and DXFs for laser cutting: all strokes to red 255·0·0, all line weights to a 0.001″ hairline. Nothing is uploaded.">
 <title>laser ready · pdf preprocessor</title>
 <script>
   // Set theme before first paint to avoid a flash. A stored choice wins; otherwise follow the OS.
@@ -122,6 +122,20 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
   font-size: 16px;
   font-weight: 500;
 }
+.spec label.k { display: block; }
+.prefix-input {
+  font-family: inherit;
+  width: 100%;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  padding: 2px 6px;
+  margin: -3px 0 0 -7px;
+}
+.prefix-input::placeholder { color: var(--muted); }
+.prefix-input:focus-visible { outline: 2px solid var(--cut); outline-offset: 1px; border-color: var(--cut); }
+.spec .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.spec .hint.warn { color: var(--warn); }
 .spec .swatch {
   display: inline-block;
   width: 12px;
@@ -131,6 +145,30 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
   vertical-align: -1px;
   box-shadow: 0 0 8px rgba(255,0,0,0.6);
 }
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+.opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+.opt input {
+  width: 16px; height: 16px; margin: 0;
+  accent-color: var(--cut);
+  cursor: pointer;
+}
+.opt-sub, .opt-note { color: var(--muted); }
 
 .drop {
   display: block;
@@ -313,7 +351,7 @@ footer .corner-mark { color: var(--cut); }
   <header>
     <h1>laser<span class="accent">|</span>ready</h1>
     <div class="head-right">
-      <span class="meta">v1.0 · pdf preprocessor</span>
+      <span class="meta">v1.1 · pdf / dxf preprocessor</span>
       <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light or dark theme" aria-pressed="false">theme</button>
     </div>
   </header>
@@ -328,16 +366,27 @@ footer .corner-mark { color: var(--cut); }
       <div class="v">0.001 in</div>
     </div>
     <div>
-      <div class="k">filename prefix</div>
-      <div class="v">laser ready</div>
+      <label class="k" for="prefix">filename prefix</label>
+      <input class="v prefix-input" id="prefix" type="text" placeholder="LaserReady" maxlength="32"
+             pattern="[A-Za-z0-9]*" autocomplete="off" spellcheck="false"
+             aria-describedby="prefixHint">
+      <div class="hint" id="prefixHint" aria-live="polite">letters &amp; numbers only</div>
     </div>
   </div>
 
+  <div class="options">
+    <label class="opt">
+      <input type="checkbox" id="engraveText">
+      <span>dxf text → engrave <span class="opt-sub">(black fill, raster)</span></span>
+    </label>
+    <span class="opt-note">dxf geometry is drawn 1:1 on a page fitted to the part</span>
+  </div>
+
   <label class="drop" id="drop">
-    <input type="file" id="file" accept="application/pdf,.pdf">
+    <input type="file" id="file" accept="application/pdf,.pdf,.dxf,.dwg">
     <div class="icon">[ + ]</div>
-    <div class="title">drop pdf · or click to browse</div>
-    <div class="sub">all strokes → red 255·0·0 · all weights → 0.001″ hairline</div>
+    <div class="title">drop pdf or dxf · or click to browse</div>
+    <div class="sub">all strokes → red 255·0·0 · all weights → 0.001″ hairline · output is always pdf</div>
   </label>
 
   <div class="log" id="log" role="log" aria-live="polite" aria-label="Processing log">
@@ -371,7 +420,7 @@ footer .corner-mark { color: var(--cut); }
     </nav>
     <div class="foot-status">
       <span><span class="corner-mark">▪</span> client-side · no upload</span>
-      <span>built on pdf-lib</span>
+      <span>built on pdf-lib · dxf-parser</span>
     </div>
   </footer>
 </div>
@@ -427,6 +476,39 @@ function ensurePdfLib() {
 
   return pdfLibLoadPromise;
 }
+
+// ----- dxf-parser loader (only fetched when a .dxf is dropped) ---------------
+const DXFPARSER_CDNS = [
+  'https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.js',
+  'https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js'
+];
+let dxfParserLoadPromise = null;
+
+function ensureDxfParser() {
+  if (dxfParserLoadPromise) return dxfParserLoadPromise;
+  dxfParserLoadPromise = (async () => {
+    let lastErr = null;
+    for (const url of DXFPARSER_CDNS) {
+      const short = url.replace(/^https?:\/\//, '').split('/')[0];
+      try {
+        log('loading dxf-parser from ' + short + '…', 'dim');
+        await loadScript(url);
+        const P = window.DxfParser && (window.DxfParser.default || window.DxfParser);
+        if (typeof P === 'function') {
+          log('dxf-parser loaded · ' + short, 'ok');
+          return P;
+        }
+        lastErr = new Error('script loaded but DxfParser global missing');
+      } catch (e) {
+        lastErr = e;
+        log('  cdn failed: ' + short, 'warn');
+      }
+    }
+    dxfParserLoadPromise = null; // allow a retry on the next file
+    throw lastErr || new Error('all cdns failed');
+  })();
+  return dxfParserLoadPromise;
+}
 // ---------------------------------------------------------------------------
 
 const drop = document.getElementById('drop');
@@ -452,6 +534,54 @@ themeToggle.addEventListener('click', () => {
   syncThemeToggle();
 });
 syncThemeToggle();
+
+// ----- filename prefix -----------------------------------------------------
+// Output name: <prefix>_<original name>. Only A–Z, a–z, 0–9 allowed; an empty
+// box falls back to the default. The choice is remembered per browser.
+const DEFAULT_PREFIX = 'LaserReady';
+const PREFIX_SEPARATOR = '_';
+const prefixInput = document.getElementById('prefix');
+const prefixHint = document.getElementById('prefixHint');
+const sanitizePrefix = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+let prefixHintTimer = null;
+
+try {
+  const saved = sanitizePrefix(localStorage.getItem('lr-prefix'));
+  if (saved) prefixInput.value = saved;
+} catch (e) { /* storage unavailable */ }
+
+prefixInput.addEventListener('input', () => {
+  const raw = prefixInput.value;
+  const clean = sanitizePrefix(raw);
+  if (clean !== raw) {
+    const removed = raw.length - clean.length;
+    const pos = Math.max(0, (prefixInput.selectionStart ?? raw.length) - removed);
+    prefixInput.value = clean;
+    try { prefixInput.setSelectionRange(pos, pos); } catch (e) { /* ignore */ }
+    prefixHint.textContent = 'removed non-alphanumeric characters';
+    prefixHint.classList.add('warn');
+    clearTimeout(prefixHintTimer);
+    prefixHintTimer = setTimeout(() => {
+      prefixHint.textContent = 'letters & numbers only';
+      prefixHint.classList.remove('warn');
+    }, 2500);
+  }
+  try { localStorage.setItem('lr-prefix', clean); } catch (e) { /* ignore */ }
+});
+
+function currentPrefix() {
+  return sanitizePrefix(prefixInput.value) || DEFAULT_PREFIX;
+}
+function outputName(inputName) {
+  return currentPrefix() + PREFIX_SEPARATOR + inputName;
+}
+
+// ----- dxf text engraving toggle (remembered per browser) -------------------
+const engraveToggle = document.getElementById('engraveText');
+try { engraveToggle.checked = localStorage.getItem('lr-engrave-text') === '1'; } catch (e) { /* ignore */ }
+engraveToggle.addEventListener('change', () => {
+  try { localStorage.setItem('lr-engrave-text', engraveToggle.checked ? '1' : '0'); } catch (e) { /* ignore */ }
+});
 
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
 function ts() {
@@ -497,9 +627,24 @@ ensurePdfLib().catch(err => {
   log('check network / ad blocker; try a different browser', 'warn');
 });
 
+const DWG_HELP = [
+  'dwg files can\'t be read in the browser — export a dxf instead:',
+  '  onshape drawing: right-click the drawing tab → export → format: dxf',
+  '  onshape sketch / face: right-click it → export as dxf/dwg → choose dxf',
+  '  autocad / other cad: save as → autocad dxf (*.dxf)'
+];
+
 async function handleFile(file) {
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    log('rejected: ' + file.name + ' is not a pdf', 'err');
+  const lower = file.name.toLowerCase();
+  const kind = lower.endsWith('.pdf') ? 'pdf' : lower.endsWith('.dxf') ? 'dxf' : lower.endsWith('.dwg') ? 'dwg' : null;
+  if (kind === 'dwg') {
+    log('---', 'dim');
+    log('rejected: ' + file.name + ' · dwg is not supported', 'err');
+    DWG_HELP.forEach((l, i) => log(l, i ? 'dim' : 'warn'));
+    return;
+  }
+  if (!kind) {
+    log('rejected: ' + file.name + ' is not a pdf or dxf', 'err');
     return;
   }
 
@@ -509,9 +654,16 @@ async function handleFile(file) {
 
   try {
     await ensurePdfLib();
-    const bytes = await file.arrayBuffer();
-    const out = await convertToLaserReady(bytes);
-    const outName = 'laser ready ' + file.name;
+    let out, outName;
+    if (kind === 'dxf') {
+      const engraveText = engraveToggle.checked;
+      log('text: ' + (engraveText ? 'engrave (black fill)' : 'skipped'), 'dim');
+      out = await convertDxfToPdf(await file.text(), { engraveText });
+      outName = outputName(file.name.replace(/\.dxf$/i, '') + '.pdf');
+    } else {
+      out = await convertToLaserReady(await file.arrayBuffer());
+      outName = outputName(file.name);
+    }
     await saveFile(out, outName);
     log('output: ' + outName + ' · ' + (out.length/1024).toFixed(1) + ' kb', 'ok');
     log('done.', 'ok');
@@ -885,6 +1037,449 @@ function transformContentStream(text) {
   }
 
   return { text: out.join('\n'), colors, widths };
+}
+
+// ---------------------------------------------------------------------------
+// DXF → PDF
+//
+// Every cut entity becomes a red (1 0 0 RG) 0.072 pt (0.001″) stroke at true
+// 1:1 scale. The page is sized to the drawing's extents plus a small margin.
+// Arcs, circles and ellipses become cubic Béziers in their local frame and are
+// then pushed through an affine matrix, which is exact — so block scaling,
+// rotation, mirroring and OCS flips all come for free.
+// Optional: TEXT / MTEXT drawn as black filled Helvetica for raster engraving.
+// ---------------------------------------------------------------------------
+
+const DXF_PAGE_MARGIN_PT = 18; // 0.25 in on every side
+const PDF_MAX_PAGE_PT = 14400; // 200 in — PDF / Acrobat page size limit
+
+// $INSUNITS code → points per drawing unit
+const DXF_UNITS = {
+  1: [72, 'inches'], 2: [864, 'feet'], 3: [4561920, 'miles'], 4: [72 / 25.4, 'millimeters'],
+  5: [72 / 2.54, 'centimeters'], 6: [72 / 0.0254, 'meters'], 8: [72e-6, 'microinches'],
+  9: [0.072, 'mils'], 10: [2592, 'yards'], 13: [72 / 25400, 'microns'], 14: [72 / 254, 'decimeters']
+};
+
+// 2D affine matrix [a b c d e f]:  x' = a·x + c·y + e,  y' = b·x + d·y + f
+const M_ID = [1, 0, 0, 1, 0, 0];
+const mMul = (m, n) => [               // m ∘ n  (apply n first, then m)
+  m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+  m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+  m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]
+];
+const mT = (x, y) => [1, 0, 0, 1, x, y];
+const mS = (sx, sy) => [sx, 0, 0, sy, 0, 0];
+const mR = rad => [Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), 0, 0];
+const mApply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+const DEG = Math.PI / 180;
+
+// OCS → WCS. Only the common mirrored case (extrusion 0,0,-1) is handled,
+// which flips X; anything tilted out of the XY plane isn't flat geometry.
+function ocsMatrix(ent) {
+  const z = ent.extrusionDirectionZ !== undefined ? ent.extrusionDirectionZ
+          : ent.extrusionDirection ? ent.extrusionDirection.z : 1;
+  return z < 0 ? mS(-1, 1) : M_ID;
+}
+
+// Paths are arrays of segments in drawing units:
+//   {t:'M',p:[x,y]} {t:'L',p:[x,y]} {t:'C',p:[x1,y1,x2,y2,x,y]}  plus closed flag.
+function arcBeziers(cx, cy, rx, ry, a0, a1) {
+  // Elliptical arc from a0 to a1 (radians, CCW, a1 > a0) split into ≤90° pieces.
+  const segs = [];
+  const sweep = a1 - a0;
+  const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+  const da = sweep / n;
+  const k = 4 / 3 * Math.tan(da / 4);
+  let a = a0;
+  segs.push({ t: 'M', p: [cx + rx * Math.cos(a), cy + ry * Math.sin(a)] });
+  for (let i = 0; i < n; i++) {
+    const b = a + da;
+    const c0 = Math.cos(a), s0 = Math.sin(a), c1 = Math.cos(b), s1 = Math.sin(b);
+    segs.push({ t: 'C', p: [
+      cx + rx * (c0 - k * s0), cy + ry * (s0 + k * c0),
+      cx + rx * (c1 + k * s1), cy + ry * (s1 - k * c1),
+      cx + rx * c1,            cy + ry * s1
+    ]});
+    a = b;
+  }
+  return segs;
+}
+
+// Polyline vertices (with optional bulge) → segments.
+function polylineSegs(vertices, closed) {
+  const v = vertices.filter(p => p && isFinite(p.x) && isFinite(p.y));
+  if (v.length < 2) return null;
+  const segs = [{ t: 'M', p: [v[0].x, v[0].y] }];
+  const count = closed ? v.length : v.length - 1;
+  for (let i = 0; i < count; i++) {
+    const p0 = v[i], p1 = v[(i + 1) % v.length];
+    const bulge = p0.bulge || 0;
+    if (Math.abs(bulge) < 1e-12) { segs.push({ t: 'L', p: [p1.x, p1.y] }); continue; }
+    // bulge = tan(θ/4); positive = CCW
+    const theta = 4 * Math.atan(bulge);
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const chord = Math.hypot(dx, dy);
+    if (chord < 1e-12) continue;
+    const r = chord / (2 * Math.sin(Math.abs(theta) / 2));
+    const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+    const h = r * Math.cos(Math.abs(theta) / 2);          // centre distance from chord midpoint
+    const sgn = bulge > 0 ? 1 : -1;
+    const cx = mx - sgn * h * dy / chord, cy = my + sgn * h * dx / chord;
+    const a0 = Math.atan2(p0.y - cy, p0.x - cx);
+    const arc = arcBeziers(cx, cy, r, r, a0, a0 + theta);
+    for (let j = 1; j < arc.length; j++) segs.push(arc[j]);
+    // pin the end exactly on the next vertex
+    const last = segs[segs.length - 1];
+    last.p[4] = p1.x; last.p[5] = p1.y;
+  }
+  return segs;
+}
+
+// B-spline (non-rational — dxf-parser doesn't expose weights) via de Boor,
+// flattened to short line segments.
+function splineSegs(ent) {
+  const cps = (ent.controlPoints || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
+  const deg = ent.degreeOfSplineCurve || 3;
+  const knots = ent.knotValues || [];
+  if (cps.length > deg && knots.length === cps.length + deg + 1) {
+    const lo = knots[deg], hi = knots[cps.length];
+    const steps = Math.min(2000, Math.max(32, cps.length * 16));
+    const pts = [];
+    for (let s = 0; s <= steps; s++) {
+      const u = s === steps ? hi : lo + (hi - lo) * s / steps;
+      let k = deg;
+      while (k < cps.length - 1 && u >= knots[k + 1]) k++;
+      const d = [];
+      for (let j = 0; j <= deg; j++) { const p = cps[k - deg + j]; d.push([p.x, p.y]); }
+      for (let r = 1; r <= deg; r++) {
+        for (let j = deg; j >= r; j--) {
+          const i = k - deg + j;
+          const den = knots[i + deg - r + 1] - knots[i];
+          const a = den === 0 ? 0 : (u - knots[i]) / den;
+          d[j] = [(1 - a) * d[j - 1][0] + a * d[j][0], (1 - a) * d[j - 1][1] + a * d[j][1]];
+        }
+      }
+      pts.push({ x: d[deg][0], y: d[deg][1] });
+    }
+    return polylineSegs(pts, false);
+  }
+  const fit = ent.fitPoints || [];
+  if (fit.length >= 2) return polylineSegs(fit, !!ent.closed);
+  return null;
+}
+
+// Strip MTEXT inline formatting codes; return an array of lines.
+function mtextLines(s) {
+  s = String(s || '')
+    .replace(/\\[Pp]/g, '\n')
+    .replace(/\\[ACcFfHhQqTtWw][^;]*;/g, '')
+    .replace(/\\S([^;]*)[\^#\/]([^;]*);/g, '$1/$2')
+    .replace(/\\[LlOoKkNX]/g, '')
+    .replace(/\\~/g, ' ')
+    .replace(/\\([\\{}])/g, '\u0000$1')
+    .replace(/[{}]/g, '')
+    .replace(/\u0000/g, '');
+  return dxfSpecialChars(s).split('\n');
+}
+function dxfSpecialChars(s) {
+  return String(s || '')
+    .replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%[cC]/g, 'Ø')
+    .replace(/%%[uUoOkK]/g, '').replace(/%%%/g, '%')
+    .replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+// Walk model space (expanding INSERTs) and collect transformed geometry.
+function collectDxf(dxf, opts) {
+  const layers = (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) || {};
+  const blocks = dxf.blocks || {};
+  const paths = [];      // { segs (transformed), closed }
+  const texts = [];      // { lines, x, y, height, rot, hAlign (0..2), vAnchor }
+  const skipped = {};
+  const skip = (type, why, n = 1) => { const k = type + (why ? ' (' + why + ')' : ''); skipped[k] = (skipped[k] || 0) + n; };
+  const counts = {};
+
+  const layerHidden = name => {
+    const l = layers[name];
+    return !!(l && (l.frozen || l.visible === false));
+  };
+
+  const addPath = (segs, m, closed) => {
+    if (!segs || segs.length < 2) return;
+    paths.push({
+      closed: !!closed,
+      segs: segs.map(s => {
+        if (s.t === 'C') {
+          const a = mApply(m, s.p[0], s.p[1]), b = mApply(m, s.p[2], s.p[3]), c = mApply(m, s.p[4], s.p[5]);
+          return { t: 'C', p: [a[0], a[1], b[0], b[1], c[0], c[1]] };
+        }
+        return { t: s.t, p: mApply(m, s.p[0], s.p[1]) };
+      })
+    });
+  };
+
+  const addText = (lines, ox, oy, height, rotDeg, hAlign, vAnchor, m) => {
+    // Push the insertion point and a unit x/y vector through m to get the
+    // final position, rotation and (uniform-ish) scale.
+    const o = mApply(m, ox, oy);
+    const r = rotDeg * DEG;
+    const ux = mApply(m, ox + Math.cos(r), oy + Math.sin(r));
+    const uy = mApply(m, ox - Math.sin(r), oy + Math.cos(r));
+    const ys = Math.hypot(uy[0] - o[0], uy[1] - o[1]);
+    texts.push({
+      lines, x: o[0], y: o[1], height: height * ys,
+      rot: Math.atan2(ux[1] - o[1], ux[0] - o[0]), hAlign, vAnchor
+    });
+  };
+
+  function walk(entities, m, depth) {
+    for (const ent of entities || []) {
+      if (!ent || ent.visible === false) continue;
+      if (ent.layer && layerHidden(ent.layer)) { skip(ent.type, 'hidden layer'); continue; }
+      const om = mMul(m, ocsMatrix(ent));
+      counts[ent.type] = (counts[ent.type] || 0) + 1;
+      switch (ent.type) {
+        case 'LINE': {
+          const v = ent.vertices || [];
+          if (v.length >= 2) addPath([{ t: 'M', p: [v[0].x, v[0].y] }, { t: 'L', p: [v[1].x, v[1].y] }], m, false);
+          break;
+        }
+        case 'LWPOLYLINE':
+          addPath(polylineSegs(ent.vertices || [], !!ent.shape), om, !!ent.shape);
+          break;
+        case 'POLYLINE':
+          if (ent.isPolyfaceMesh || ent.is3dPolygonMesh) { skip(ent.type, '3D mesh'); break; }
+          addPath(polylineSegs(ent.vertices || [], !!ent.shape), ent.is3dPolyline ? m : om, !!ent.shape);
+          break;
+        case 'CIRCLE': {
+          const c = ent.center, r = ent.radius;
+          if (c && r > 0) addPath(arcBeziers(c.x, c.y, r, r, 0, 2 * Math.PI), om, true);
+          break;
+        }
+        case 'ARC': {
+          const c = ent.center, r = ent.radius;
+          if (!c || !(r > 0)) break;
+          let a0 = ent.startAngle || 0, a1 = ent.endAngle || 0;
+          while (a1 <= a0) a1 += 2 * Math.PI;
+          addPath(arcBeziers(c.x, c.y, r, r, a0, a1), om, false);
+          break;
+        }
+        case 'ELLIPSE': {
+          const c = ent.center, maj = ent.majorAxisEndPoint;
+          if (!c || !maj) break;
+          const rx = Math.hypot(maj.x, maj.y), ry = rx * (ent.axisRatio || 1);
+          if (!(rx > 0)) break;
+          let a0 = ent.startAngle || 0, a1 = ent.endAngle === undefined ? 2 * Math.PI : ent.endAngle;
+          while (a1 <= a0) a1 += 2 * Math.PI;
+          const full = Math.abs(a1 - a0 - 2 * Math.PI) < 1e-9;
+          const em = mMul(mMul(m, mT(c.x, c.y)), mR(Math.atan2(maj.y, maj.x)));
+          addPath(arcBeziers(0, 0, rx, ry, a0, a1), em, full);
+          break;
+        }
+        case 'SPLINE': {
+          const segs = splineSegs(ent);
+          if (segs) addPath(segs, m, !!ent.closed); else skip(ent.type, 'unreadable');
+          break;
+        }
+        case 'INSERT': {
+          const blk = blocks[ent.name];
+          if (!blk) { skip(ent.type, 'missing block'); break; }
+          if (depth > 16) { skip(ent.type, 'nested too deep'); break; }
+          const base = blk.position || { x: 0, y: 0 };
+          const pos = ent.position || { x: 0, y: 0 };
+          const sx = ent.xScale === undefined ? 1 : ent.xScale;
+          const sy = ent.yScale === undefined ? 1 : ent.yScale;
+          const cols = Math.max(1, ent.columnCount || 1), rows = Math.max(1, ent.rowCount || 1);
+          for (let ci = 0; ci < cols; ci++) {
+            for (let ri = 0; ri < rows; ri++) {
+              let bm = mMul(om, mT(pos.x, pos.y));
+              bm = mMul(bm, mR((ent.rotation || 0) * DEG));
+              bm = mMul(bm, mT(ci * (ent.columnSpacing || 0), ri * (ent.rowSpacing || 0)));
+              bm = mMul(bm, mS(sx, sy));
+              bm = mMul(bm, mT(-base.x, -base.y));
+              walk(blk.entities, bm, depth + 1);
+            }
+          }
+          break;
+        }
+        case 'TEXT': {
+          if (!opts.engraveText) { skip(ent.type, 'text engraving off'); break; }
+          const txt = dxfSpecialChars(ent.text);
+          if (!txt.trim() || !(ent.textHeight > 0)) break;
+          const h = ent.halign || 0, v = ent.valign || 0;
+          // Aligned text uses the second alignment point (endPoint) as its anchor.
+          const p = (h || v) && ent.endPoint ? ent.endPoint : ent.startPoint;
+          if (!p) break;
+          const hAlign = h === 1 || h === 4 ? 1 : h === 2 ? 2 : 0;
+          const vAnchor = h === 4 ? 'middle' : ['baseline', 'bottom', 'middle', 'top'][v] || 'baseline';
+          addText([txt], p.x, p.y, ent.textHeight, ent.rotation || 0, hAlign, vAnchor, om);
+          break;
+        }
+        case 'MTEXT': {
+          if (!opts.engraveText) { skip(ent.type, 'text engraving off'); break; }
+          const lines = mtextLines(ent.text).filter((l, i, a) => l.trim() || i < a.length - 1);
+          if (!lines.some(l => l.trim()) || !ent.position || !(ent.height > 0)) break;
+          const ap = ent.attachmentPoint || 1;
+          let rot = ent.rotation || 0;
+          if (ent.directionVector && (ent.directionVector.x || ent.directionVector.y)) {
+            rot = Math.atan2(ent.directionVector.y, ent.directionVector.x) / DEG;
+          }
+          const hAlign = (ap - 1) % 3;
+          const vAnchor = ['mtop', 'mmiddle', 'mbottom'][Math.floor((ap - 1) / 3)];
+          addText(lines, ent.position.x, ent.position.y, ent.height, rot, hAlign, vAnchor, om);
+          break;
+        }
+        default:
+          counts[ent.type]--;
+          skip(ent.type);
+      }
+    }
+  }
+
+  // Prefer model space. Paper-space entities (title blocks, viewports) are
+  // only used if the file has nothing else.
+  const all = dxf.entities || [];
+  const model = all.filter(e => !e.inPaperSpace);
+  walk(model.length ? model : all, M_ID, 0);
+  if (model.length && model.length < all.length) skip('paper space entity', null, all.length - model.length);
+
+  return { paths, texts, skipped, counts };
+}
+
+async function convertDxfToPdf(text, opts) {
+  const DxfParser = await ensureDxfParser();
+  log('parsing dxf…');
+  let dxf;
+  try {
+    dxf = new DxfParser().parseSync(text);
+  } catch (e) {
+    throw new Error('could not read dxf: ' + (e.message || e));
+  }
+  if (!dxf) throw new Error('could not read dxf');
+
+  // Units
+  const code = dxf.header && dxf.header['$INSUNITS'];
+  let unit = DXF_UNITS[code];
+  if (!unit) {
+    unit = DXF_UNITS[4];
+    log('units: ' + (code ? 'unsupported code ' + code : 'not specified') + ' · assuming millimeters', 'warn');
+  } else {
+    log('units: ' + unit[1]);
+  }
+  const k = unit[0];
+
+  const { paths, texts, skipped, counts } = collectDxf(dxf, opts);
+  const drawn = Object.entries(counts).filter(([, n]) => n > 0).map(([t, n]) => n + ' ' + t.toLowerCase());
+  log('entities: ' + (drawn.length ? drawn.join(' · ') : 'none'));
+  for (const [what, n] of Object.entries(skipped)) log('  skipped ' + n + ' ' + what.toLowerCase(), 'dim');
+  if (!paths.length && !texts.length) throw new Error('no cuttable geometry found in dxf');
+
+  // Fonts / text measurements (needed for extents)
+  const pdfDoc = await PDFDocument.create();
+  let font = null;
+  const placed = [];
+  if (texts.length) {
+    font = await pdfDoc.embedFont(PDFLibAPI.StandardFonts.Helvetica);
+    const CAP = 0.718; // Helvetica cap height / em — DXF text height is cap height
+    const safe = s => Array.from(s).map(ch => {
+      try { font.encodeText(ch); return ch; } catch (e) { return '?'; }
+    }).join('');
+    for (const t of texts) {
+      const size = t.height * k / CAP;              // font size in points
+      const lineGap = size * 1.25 / k;              // drawing units
+      const lines = t.lines.map(safe);
+      const n = lines.length;
+      const capU = t.height;
+      // offset (in the text's own frame, drawing units) from anchor to first baseline
+      let y0;
+      switch (t.vAnchor) {
+        case 'top': case 'mtop': y0 = -capU; break;
+        case 'middle': y0 = -capU / 2; break;
+        case 'mmiddle': y0 = ((n - 1) * lineGap - capU) / 2; break;
+        case 'bottom': y0 = 0.207 * size / k; break; // Helvetica descender
+        case 'mbottom': y0 = (n - 1) * lineGap; break;
+        default: y0 = 0;
+      }
+      const cos = Math.cos(t.rot), sin = Math.sin(t.rot);
+      lines.forEach((line, i) => {
+        if (!line.trim()) return;
+        const w = font.widthOfTextAtSize(line, size) / k;
+        const dx = t.hAlign === 1 ? -w / 2 : t.hAlign === 2 ? -w : 0;
+        const dy = y0 - i * lineGap;
+        const x = t.x + dx * cos - dy * sin, y = t.y + dx * sin + dy * cos;
+        // corners for extents (baseline box, plus cap height & a little descender)
+        const corners = [[0, -0.25 * capU], [w, -0.25 * capU], [w, capU], [0, capU]]
+          .map(([u, v]) => [x + u * cos - v * sin, y + u * sin + v * cos]);
+        placed.push({ line, size, x, y, rot: t.rot, corners });
+      });
+    }
+  }
+
+  // Extents in drawing units
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const grow = (x, y) => {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  };
+  for (const path of paths) {
+    let cx = 0, cy = 0;
+    for (const s of path.segs) {
+      if (s.t === 'C') {
+        // sample the curve — control points would overstate the bounds
+        for (let i = 1; i <= 16; i++) {
+          const u = i / 16, v = 1 - u;
+          const b0 = v * v * v, b1 = 3 * v * v * u, b2 = 3 * v * u * u, b3 = u * u * u;
+          grow(b0 * cx + b1 * s.p[0] + b2 * s.p[2] + b3 * s.p[4], b0 * cy + b1 * s.p[1] + b2 * s.p[3] + b3 * s.p[5]);
+        }
+        cx = s.p[4]; cy = s.p[5];
+      } else {
+        grow(s.p[0], s.p[1]); cx = s.p[0]; cy = s.p[1];
+      }
+    }
+  }
+  for (const p of placed) for (const [x, y] of p.corners) grow(x, y);
+  if (!isFinite(minX)) throw new Error('no cuttable geometry found in dxf');
+
+  const pageW = (maxX - minX) * k + 2 * DXF_PAGE_MARGIN_PT;
+  const pageH = (maxY - minY) * k + 2 * DXF_PAGE_MARGIN_PT;
+  const inch = v => (v / 72).toFixed(3);
+  log('extents: ' + inch((maxX - minX) * k) + ' × ' + inch((maxY - minY) * k) + ' in · page ' + inch(pageW) + ' × ' + inch(pageH) + ' in');
+  if (pageW > PDF_MAX_PAGE_PT || pageH > PDF_MAX_PAGE_PT) {
+    log('warning: page exceeds 200 in — acrobat may refuse it; check the drawing units', 'warn');
+  }
+
+  const X = x => fmtNum((x - minX) * k + DXF_PAGE_MARGIN_PT);
+  const Y = y => fmtNum((y - minY) * k + DXF_PAGE_MARGIN_PT);
+  const page = pdfDoc.addPage([pageW, pageH]);
+
+  // Cut geometry
+  const ops = ['q', '1 0 0 RG', fmtNum(TARGET_WIDTH_POINTS) + ' w', '1 J', '1 j'];
+  for (const path of paths) {
+    for (const s of path.segs) {
+      if (s.t === 'M') ops.push(X(s.p[0]) + ' ' + Y(s.p[1]) + ' m');
+      else if (s.t === 'L') ops.push(X(s.p[0]) + ' ' + Y(s.p[1]) + ' l');
+      else ops.push(X(s.p[0]) + ' ' + Y(s.p[1]) + ' ' + X(s.p[2]) + ' ' + Y(s.p[3]) + ' ' + X(s.p[4]) + ' ' + Y(s.p[5]) + ' c');
+    }
+    ops.push(path.closed ? 's' : 'S');
+  }
+  ops.push('Q');
+  const stream = pdfDoc.context.flateStream(ops.join('\n'));
+  page.node.addContentStream(pdfDoc.context.register(stream));
+
+  // Engrave text: black fill (no stroke)
+  for (const p of placed) {
+    page.drawText(p.line, {
+      x: (p.x - minX) * k + DXF_PAGE_MARGIN_PT,
+      y: (p.y - minY) * k + DXF_PAGE_MARGIN_PT,
+      size: p.size,
+      font,
+      color: PDFLibAPI.rgb(0, 0, 0),
+      rotate: PDFLibAPI.radians(p.rot)
+    });
+  }
+
+  log('drew ' + paths.length + ' cut path(s)' + (placed.length ? ' · ' + placed.length + ' engrave text line(s)' : ''));
+  log('serializing…');
+  return await pdfDoc.save({ useObjectStreams: false });
 }
 
 async function saveFile(bytes, suggestedName) {
