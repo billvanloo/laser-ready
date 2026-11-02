@@ -122,6 +122,20 @@ h1 .accent { color: var(--cut); margin: 0 4px; }
   font-size: 16px;
   font-weight: 500;
 }
+.spec label.k { display: block; }
+.prefix-input {
+  font-family: inherit;
+  width: 100%;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  padding: 2px 6px;
+  margin: -3px 0 0 -7px;
+}
+.prefix-input::placeholder { color: var(--muted); }
+.prefix-input:focus-visible { outline: 2px solid var(--cut); outline-offset: 1px; border-color: var(--cut); }
+.spec .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.spec .hint.warn { color: var(--warn); }
 .spec .swatch {
   display: inline-block;
   width: 12px;
@@ -328,8 +342,11 @@ footer .corner-mark { color: var(--cut); }
       <div class="v">0.001 in</div>
     </div>
     <div>
-      <div class="k">filename prefix</div>
-      <div class="v">laser ready</div>
+      <label class="k" for="prefix">filename prefix</label>
+      <input class="v prefix-input" id="prefix" type="text" placeholder="LaserReady" maxlength="32"
+             pattern="[A-Za-z0-9]*" autocomplete="off" spellcheck="false"
+             aria-describedby="prefixHint">
+      <div class="hint" id="prefixHint" aria-live="polite">letters &amp; numbers only</div>
     </div>
   </div>
 
@@ -453,6 +470,47 @@ themeToggle.addEventListener('click', () => {
 });
 syncThemeToggle();
 
+// ----- filename prefix -----------------------------------------------------
+// Output name: <prefix>_<original name>. Only A–Z, a–z, 0–9 allowed; an empty
+// box falls back to the default. The choice is remembered per browser.
+const DEFAULT_PREFIX = 'LaserReady';
+const PREFIX_SEPARATOR = '_';
+const prefixInput = document.getElementById('prefix');
+const prefixHint = document.getElementById('prefixHint');
+const sanitizePrefix = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+let prefixHintTimer = null;
+
+try {
+  const saved = sanitizePrefix(localStorage.getItem('lr-prefix'));
+  if (saved) prefixInput.value = saved;
+} catch (e) { /* storage unavailable */ }
+
+prefixInput.addEventListener('input', () => {
+  const raw = prefixInput.value;
+  const clean = sanitizePrefix(raw);
+  if (clean !== raw) {
+    const removed = raw.length - clean.length;
+    const pos = Math.max(0, (prefixInput.selectionStart ?? raw.length) - removed);
+    prefixInput.value = clean;
+    try { prefixInput.setSelectionRange(pos, pos); } catch (e) { /* ignore */ }
+    prefixHint.textContent = 'removed non-alphanumeric characters';
+    prefixHint.classList.add('warn');
+    clearTimeout(prefixHintTimer);
+    prefixHintTimer = setTimeout(() => {
+      prefixHint.textContent = 'letters & numbers only';
+      prefixHint.classList.remove('warn');
+    }, 2500);
+  }
+  try { localStorage.setItem('lr-prefix', clean); } catch (e) { /* ignore */ }
+});
+
+function currentPrefix() {
+  return sanitizePrefix(prefixInput.value) || DEFAULT_PREFIX;
+}
+function outputName(inputName) {
+  return currentPrefix() + PREFIX_SEPARATOR + inputName;
+}
+
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
 function ts() {
   const d = new Date();
@@ -511,7 +569,7 @@ async function handleFile(file) {
     await ensurePdfLib();
     const bytes = await file.arrayBuffer();
     const out = await convertToLaserReady(bytes);
-    const outName = 'laser ready ' + file.name;
+    const outName = outputName(file.name);
     await saveFile(out, outName);
     log('output: ' + outName + ' · ' + (out.length/1024).toFixed(1) + ' kb', 'ok');
     log('done.', 'ok');
