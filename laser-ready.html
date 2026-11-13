@@ -1060,6 +1060,27 @@ const DXF_UNITS = {
   9: [0.072, 'mils'], 10: [2592, 'yards'], 13: [72 / 25400, 'microns'], 14: [72 / 254, 'decimeters']
 };
 
+// Points per drawing unit. $INSUNITS wins when it names a real unit. Many
+// exporters (Onshape included) omit it or write 0 = "unitless", so fall back to
+// $MEASUREMENT (0 = imperial → inches, 1 = metric → millimeters), and only
+// guess millimeters when the file says nothing at all.
+function dxfUnitScale(header) {
+  const code = Number(header['$INSUNITS']);
+  if (DXF_UNITS[code]) {
+    log('units: ' + DXF_UNITS[code][1]);
+    return DXF_UNITS[code][0];
+  }
+  const why = header['$INSUNITS'] === undefined || code === 0 ? 'not specified' : 'unsupported code ' + header['$INSUNITS'];
+  const meas = header['$MEASUREMENT'];
+  if (meas !== undefined && (Number(meas) === 0 || Number(meas) === 1)) {
+    const unit = Number(meas) === 0 ? DXF_UNITS[1] : DXF_UNITS[4];
+    log('units: ' + unit[1] + ' (from $MEASUREMENT · $INSUNITS ' + why + ')');
+    return unit[0];
+  }
+  log('units: ' + why + ' · assuming millimeters', 'warn');
+  return DXF_UNITS[4][0];
+}
+
 // 2D affine matrix [a b c d e f]:  x' = a·x + c·y + e,  y' = b·x + d·y + f
 const M_ID = [1, 0, 0, 1, 0, 0];
 const mMul = (m, n) => [               // m ∘ n  (apply n first, then m)
@@ -1356,16 +1377,7 @@ async function convertDxfToPdf(text, opts) {
   }
   if (!dxf) throw new Error('could not read dxf');
 
-  // Units
-  const code = dxf.header && dxf.header['$INSUNITS'];
-  let unit = DXF_UNITS[code];
-  if (!unit) {
-    unit = DXF_UNITS[4];
-    log('units: ' + (code ? 'unsupported code ' + code : 'not specified') + ' · assuming millimeters', 'warn');
-  } else {
-    log('units: ' + unit[1]);
-  }
-  const k = unit[0];
+  const k = dxfUnitScale(dxf.header || {});
 
   const { paths, texts, skipped, counts } = collectDxf(dxf, opts);
   const drawn = Object.entries(counts).filter(([, n]) => n > 0).map(([t, n]) => n + ' ' + t.toLowerCase());
